@@ -15,6 +15,7 @@ import {
  * ==================================================================== */
 
 const KEY = 'pelada.v1';
+const HISTORY_MAX = 30;
 const clock = () => Date.now();
 
 const PALETTE = [
@@ -131,12 +132,16 @@ function load() {
     run = null;
   }
   const players = Array.isArray(saved.players) ? saved.players.filter((p) => p && p.id && p.name) : [];
-  return { players, config, run };
+  const history = Array.isArray(saved.history) ? saved.history.filter((h) => h && h.id && h.text).slice(0, HISTORY_MAX) : [];
+  return { players, config, run, history, tutorialSeen: Boolean(saved.tutorialSeen) };
 }
 
 let S = load();
 const ui = {
   screen: S.run ? 'run' : 'home',
+  tutorial: null,
+  lastOverlay: '',
+  lastAnnounce: '',
   sheet: null,
   reveal: null,
   revealTimer: null,
@@ -145,9 +150,10 @@ const ui = {
 };
 
 const run = () => S.run;
+if (!S.tutorialSeen && !S.run) ui.tutorial = { step: 0 };
 
 function persist() {
-  store.write({ players: S.players, config: S.config, run: dehydrate(S.run) });
+  store.write({ players: S.players, config: S.config, run: dehydrate(S.run), history: S.history, tutorialSeen: S.tutorialSeen });
 }
 
 function commit() {
@@ -290,7 +296,9 @@ function viewHome() {
     ${r ? `<button class="btn primary big" data-act="resume">Continuar pelada<small>${esc(phaseLabel(r))}</small></button>` : ''}
     <button class="btn ${r ? '' : 'primary'} big" data-act="new">Nova pelada</button>
     <button class="btn big" data-act="players">Jogadores<small>${S.players.length} cadastrados</small></button>
-    <p class="fine">Sem conta. Tudo fica só neste aparelho.</p>
+    <button class="btn big" data-act="history">Histórico<small>${S.history.length ? `${S.history.length} ${S.history.length === 1 ? 'pelada guardada' : 'peladas guardadas'}` : 'nenhuma ainda'}</small></button>
+    <button class="btn" data-act="tutorial">Como funciona</button>
+    <p class="fine">Sem conta. Tudo fica só neste aparelho. <a href="privacidade.html">Política de privacidade</a></p>
   </section>`;
 }
 
@@ -316,6 +324,7 @@ function viewPlayers() {
       <textarea name="list" placeholder="1. Zé Carlos | Carlão&#10;2. João Pedro" aria-label="Lista de jogadores"></textarea>
       <button class="btn" type="submit">Adicionar da lista</button>
     </form>
+    ${S.players.length ? `<div class="card stack"><h3>Backup da lista</h3><p class="fine">Copie a lista para guardar ou levar a outro aparelho. Para restaurar, cole em "Colar uma lista".</p><button class="btn" data-act="copylist">Copiar lista de jogadores</button></div>` : ''}
     ${rows || '<p class="muted">Ninguém cadastrado ainda.</p>'}
   </section>`;
 }
@@ -478,9 +487,18 @@ function viewTeams() {
   const leftOut = left.length
     ? `<div class="notice warn"><b>Sem time (${left.length}):</b> ${left.map((p) => esc(p.name)).join(', ')}. Todas as vagas já foram sorteadas.</div>`
     : '';
+  const canPick = s.history.length === 0 && r.matchNo === 0;
+  const opts = (sel) => r.colors.map((_, t) => `<option value="${t}" ${t === sel ? 'selected' : ''}>${esc(teamColor(t).name)}</option>`).join('');
+  const startPick = canPick
+    ? `<div class="card"><h3>Quem começa jogando</h3>
+        <div class="field"><div class="lbl">Primeiro time</div><select data-start="0" aria-label="Primeiro time em campo">${opts(s.holder)}</select></div>
+        <div class="field"><div class="lbl">Segundo time</div><select data-start="1" aria-label="Segundo time em campo">${opts(s.challenger)}</select></div>
+      </div>`
+    : '';
   return `<section class="stack">
     <h2>Times</h2>
     <p class="muted">Começam jogando: ${chip(s.holder)} × ${chip(s.challenger)}</p>
+    ${startPick}
     ${cards}
     ${leftOut}
     <button class="btn primary big" data-act="startmatch">Começar a primeira partida</button>
@@ -620,6 +638,56 @@ function viewSummary() {
   </section>`;
 }
 
+function fmtDate(ts) {
+  return new Date(ts).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function saveHistory(r) {
+  const n = r.session.history.length;
+  if (!n) return;
+  const entry = { id: String(r.startedAt), startedAt: r.startedAt, matches: n, text: summaryText(r) };
+  S.history = [entry, ...S.history.filter((h) => h.id !== entry.id)].slice(0, HISTORY_MAX);
+}
+
+function viewHistory() {
+  const items = S.history
+    .map(
+      (h) => `<details class="card hist">
+        <summary><span>${esc(fmtDate(h.startedAt))}</span><small>${h.matches} ${h.matches === 1 ? 'partida' : 'partidas'}</small></summary>
+        <pre>${esc(h.text)}</pre>
+        <div class="row2"><button class="btn" data-act="sharehist" data-id="${esc(h.id)}">Compartilhar</button><button class="btn danger" data-act="delhist" data-id="${esc(h.id)}">Apagar</button></div>
+      </details>`,
+    )
+    .join('');
+  return `<section class="stack">
+    <h2>Histórico<small>${S.history.length}</small></h2>
+    <p class="fine">As peladas encerradas ficam guardadas neste aparelho (até ${HISTORY_MAX}).</p>
+    ${items || '<p class="muted">Nenhuma pelada guardada ainda. Ela aparece aqui quando você encerra uma pelada com ao menos uma partida.</p>'}
+  </section>`;
+}
+
+const TUTORIAL = [
+  { t: 'Cadastre quem joga', p: 'Em "Jogadores", cole a lista do grupo (um nome por linha). Se ninguém quiser usar o celular, escolha "Só cores" ao criar a pelada.' },
+  { t: 'Sorteie na hora', p: 'Cada pessoa toca no próprio nome e vê a cor do time em tela cheia. Os times fecham no tamanho certo. Errou? "Desfazer último" devolve a mesma cor.' },
+  { t: 'Jogue e marque', p: 'Inicie a partida, toque em "+1 gol" e use "Pausar" quando precisar. A partida termina pelo tempo ou pelos gols que você definir, e o gol errado tem desfazer.' },
+  { t: 'A fila anda sozinha', p: 'Quem ganha fica, até o limite de vitórias. No fim o app mostra quem entra. Ao encerrar a pelada, o resumo vai para o histórico e para o WhatsApp.' },
+];
+
+function tutorialHtml() {
+  const tu = ui.tutorial;
+  if (!tu) return '';
+  const last = tu.step === TUTORIAL.length - 1;
+  const d = TUTORIAL[tu.step];
+  const dots = TUTORIAL.map((_, i) => `<span class="dot-i ${i === tu.step ? 'on' : ''}" aria-hidden="true"></span>`).join('');
+  return `<div class="sheet-bg"></div>
+    <div class="sheet tutorial" role="dialog" aria-modal="true" aria-label="Como funciona, passo ${tu.step + 1} de ${TUTORIAL.length}">
+      <div class="dots">${dots}<span class="fine">${tu.step + 1} de ${TUTORIAL.length}</span></div>
+      <h3>${esc(d.t)}</h3>
+      <p>${esc(d.p)}</p>
+      <div class="row2"><button class="btn" data-act="tutskip">${last ? 'Fechar' : 'Pular'}</button><button class="btn primary" data-act="tutnext">${last ? 'Começar' : 'Próximo'}</button></div>
+    </div>`;
+}
+
 function viewRun() {
   const r = run();
   if (!r) return viewHome();
@@ -710,9 +778,20 @@ function endHtml() {
 /* ---------------------------------------------------------------- render */
 
 function render() {
-  const screen = ui.screen === 'run' ? viewRun() : ui.screen === 'setup' ? viewSetup() : ui.screen === 'players' ? viewPlayers() : viewHome();
-  $('#app').innerHTML = header() + screen;
-  $('#overlay').innerHTML = (ui.reveal ? revealHtml() : '') || sheetHtml() || endHtml();
+  const screen = ui.screen === 'run' ? viewRun() : ui.screen === 'setup' ? viewSetup() : ui.screen === 'players' ? viewPlayers() : ui.screen === 'history' ? viewHistory() : viewHome();
+  $('#app').innerHTML = header() + `<main>${screen}</main>`;
+  const ovKind = ui.tutorial ? 'tut' : ui.reveal ? 'reveal' : ui.sheet ? 'sheet:' + ui.sheet.type : endHtml() ? 'end' : '';
+  $('#overlay').innerHTML = tutorialHtml() || (ui.reveal ? revealHtml() : '') || sheetHtml() || endHtml();
+  if (ovKind !== ui.lastOverlay) {
+    ui.lastOverlay = ovKind;
+    if (ovKind) {
+      const target = $('#overlay .reveal') || $('#overlay .btn.primary') || $('#overlay button');
+      if (target) {
+        if (!target.hasAttribute('tabindex') && !target.matches('button')) target.setAttribute('tabindex', '-1');
+        target.focus({ preventScroll: true });
+      }
+    }
+  }
   const key = `${ui.screen}|${run()?.phase || ''}|${run()?.matchNo || 0}`;
   if (key !== ui.lastKey) {
     ui.lastKey = key;
@@ -778,8 +857,18 @@ async function updateWakeLock() {
 
 /* ---------------------------------------------------------------- partida: ações */
 
+function announce(text) {
+  const el = $('#sr');
+  if (el && text !== ui.lastAnnounce) {
+    ui.lastAnnounce = text;
+    el.textContent = text;
+  }
+}
+
 function afterMatchChange(prevState) {
   const m = run().match;
+  const nm = (t) => teamColor(t).name;
+  announce(`${nm(m.teamA)} ${m.scoreA}, ${nm(m.teamB)} ${m.scoreB}.${m.state === State.ENDED ? ' Fim da partida.' : m.state === State.PAUSED ? ' Pausado.' : ''}`);
   if (m.state === State.ENDED && prevState !== State.ENDED) buzzer();
   updateWakeLock();
   commit();
@@ -861,6 +950,7 @@ function endSession() {
   }
   r.match = null;
   r.phase = 'summary';
+  saveHistory(r);
   updateWakeLock();
   commit();
 }
@@ -882,6 +972,23 @@ async function shareText(text) {
   }
 }
 
+async function copyText(text, okMessage) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(okMessage);
+  } catch {
+    if (navigator.share) {
+      try {
+        await navigator.share({ text });
+        return;
+      } catch {
+        /* cancelado */
+      }
+    }
+    toast('Não consegui copiar. Selecione o texto e copie.');
+  }
+}
+
 /* ---------------------------------------------------------------- eventos */
 
 const actions = {
@@ -900,6 +1007,39 @@ const actions = {
   players() {
     ui.screen = 'players';
     render();
+  },
+  history() {
+    ui.screen = 'history';
+    render();
+  },
+  tutorial() {
+    ui.tutorial = { step: 0 };
+    render();
+  },
+  tutnext() {
+    if (!ui.tutorial) return;
+    if (ui.tutorial.step >= TUTORIAL.length - 1) return actions.tutskip();
+    ui.tutorial.step++;
+    render();
+  },
+  tutskip() {
+    ui.tutorial = null;
+    S.tutorialSeen = true;
+    commit();
+  },
+  copylist() {
+    const text = S.players.map((p) => (p.aliases && p.aliases.length ? `${p.name} | ${p.aliases.join(', ')}` : p.name)).join('\n');
+    copyText(text, 'Lista copiada.');
+  },
+  sharehist(el) {
+    const h = S.history.find((x) => x.id === el.dataset.id);
+    if (h) shareText(h.text);
+  },
+  delhist(el) {
+    const h = S.history.find((x) => x.id === el.dataset.id);
+    if (!h || !confirm(`Apagar a pelada de ${fmtDate(h.startedAt)} do histórico?`)) return;
+    S.history = S.history.filter((x) => x.id !== h.id);
+    commit();
   },
   step(el) {
     const f = el.dataset.f;
@@ -1058,6 +1198,25 @@ document.addEventListener('change', (e) => {
     if (j >= 0 && j !== i) [colors[i], colors[j]] = [colors[j], colors[i]];
     S.config.colors = colors;
     commit();
+  } else if (t.matches('[data-start]')) {
+    const s = run().session;
+    const slot = Number(t.dataset.start);
+    const pick = Number(t.value);
+    let a = s.holder;
+    let b = s.challenger;
+    if (slot === 0) {
+      if (pick === b) b = a;
+      a = pick;
+    } else {
+      if (pick === a) a = b;
+      b = pick;
+    }
+    try {
+      s.setStart(a, b);
+    } catch {
+      toast('Não dá mais para trocar quem começa.');
+    }
+    commit();
   } else if (t.matches('[data-cfg]')) {
     S.config[t.dataset.cfg] = t.value;
     commit();
@@ -1135,6 +1294,13 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 window.addEventListener('pagehide', persist);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (ui.tutorial) actions.tutskip();
+  else if (ui.reveal) closeReveal(false);
+  else if (ui.sheet) actions.closesheet();
+});
 
 
 setInterval(tick, 100);

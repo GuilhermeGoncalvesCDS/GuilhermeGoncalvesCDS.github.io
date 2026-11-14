@@ -293,6 +293,20 @@ export class Session {
     return this.streak[team];
   }
 
+  /**
+   * Escolhe quais dois times começam jogando. Só vale antes da primeira partida
+   * terminar; os demais ficam na fila na ordem em que já estavam.
+   */
+  setStart(a, b) {
+    need(this.history.length === 0, 'só dá para escolher quem começa antes da primeira partida');
+    need(Number.isInteger(a) && Number.isInteger(b) && a !== b, 'escolha dois times diferentes');
+    need(a >= 0 && b >= 0 && a < this.teamCount && b < this.teamCount, 'time inexistente');
+    const rest = [this.holder, this.challenger, ...this.queue].filter((t) => t !== a && t !== b);
+    this.holder = a;
+    this.challenger = b;
+    this.queue = rest;
+  }
+
   newMatch(clock) {
     return new Match(this.holder, this.challenger, this.rules.match, clock);
   }

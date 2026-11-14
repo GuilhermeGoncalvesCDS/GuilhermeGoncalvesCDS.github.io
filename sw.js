@@ -1,5 +1,5 @@
 /* Guarda os arquivos do app para abrir sem internet. Estratégia: responde do cache e atualiza em segundo plano. */
-const CACHE = 'pelada-v1';
+const CACHE = 'pelada-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const ASSETS = [
   './app.js',
   './core.js',
   './manifest.webmanifest',
+  './privacidade.html',
   './icon.svg',
   './icon-192.png',
   './icon-512.png',
