@@ -14,8 +14,11 @@ import {
  * Pelada Fácil. Sem conta, sem servidor: tudo fica no aparelho.
  * ==================================================================== */
 
-const KEY = 'pelada.v1';
+const KEY_V1 = 'pelada.v1';
+const KEY = 'pelada.v2';
+const WEEKDAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const HISTORY_MAX = 30;
+const NAME_MAX = 40;
 const clock = () => Date.now();
 
 const PALETTE = [
@@ -81,9 +84,9 @@ const ICONS = {
 /* ---------------------------------------------------------------- armazenamento */
 
 const store = {
-  read() {
+  read(key = KEY) {
     try {
-      const raw = localStorage.getItem(KEY);
+      const raw = localStorage.getItem(key);
       return raw ? JSON.parse(raw) : null;
     } catch {
       return null;
@@ -115,8 +118,8 @@ function dehydrate(r) {
   return { ...r, session: r.session.toJSON(), draw: r.draw.toJSON(), match: r.match ? r.match.toJSON() : null };
 }
 
-function load() {
-  const saved = store.read() || {};
+function cleanGroup(saved, fallbackName) {
+  saved = saved || {};
   const config = { ...defaultConfig(), ...(saved.config || {}) };
   const ids = PALETTE.map((c) => c.id);
   const okColors =
@@ -133,12 +136,49 @@ function load() {
   }
   const players = Array.isArray(saved.players) ? saved.players.filter((p) => p && p.id && p.name) : [];
   const history = Array.isArray(saved.history) ? saved.history.filter((h) => h && h.id && h.text).slice(0, HISTORY_MAX) : [];
-  return { players, config, run, history, tutorialSeen: Boolean(saved.tutorialSeen) };
+  const day = Number(saved.weekday);
+  const weekday = saved.weekday !== null && saved.weekday !== undefined && Number.isInteger(day) && day >= 0 && day <= 6 ? day : null;
+  return {
+    id: saved.id || newId(),
+    name: String(saved.name || fallbackName || 'Minha pelada').trim().slice(0, NAME_MAX) || 'Minha pelada',
+    weekday,
+    players,
+    config,
+    run,
+    history,
+  };
 }
 
-let S = load();
+function load() {
+  let saved = store.read(KEY);
+  if (!saved || !Array.isArray(saved.groups) || !saved.groups.length) {
+    // primeira abertura desta versão: os dados da versão anterior viram a primeira pelada
+    const old = store.read(KEY_V1) || {};
+    saved = { groups: [{ ...old, name: 'Minha pelada' }], tutorialSeen: Boolean(old.tutorialSeen), currentId: null };
+  }
+  const groups = saved.groups.map((g, i) => cleanGroup(g, `Pelada ${i + 1}`));
+  const currentId = groups.some((g) => g.id === saved.currentId) ? saved.currentId : groups[0].id;
+  return { groups, currentId, tutorialSeen: Boolean(saved.tutorialSeen) };
+}
+
+/** G guarda tudo; S é um atalho para a pelada que está aberta, para o resto do código não precisar saber de grupos. */
+let G = load();
+const cur = () => G.groups.find((g) => g.id === G.currentId) || G.groups[0];
+const S = {
+  get players() { return cur().players; },
+  set players(v) { cur().players = v; },
+  get config() { return cur().config; },
+  set config(v) { cur().config = v; },
+  get run() { return cur().run; },
+  set run(v) { cur().run = v; },
+  get history() { return cur().history; },
+  set history(v) { cur().history = v; },
+  get tutorialSeen() { return G.tutorialSeen; },
+  set tutorialSeen(v) { G.tutorialSeen = v; },
+};
 const ui = {
-  screen: S.run ? 'run' : 'home',
+  screen: cur().run ? 'run' : 'home',
+  groupForm: null,
   tutorial: null,
   lastOverlay: '',
   lastAnnounce: '',
@@ -153,7 +193,12 @@ const run = () => S.run;
 if (!S.tutorialSeen && !S.run) ui.tutorial = { step: 0 };
 
 function persist() {
-  store.write({ players: S.players, config: S.config, run: dehydrate(S.run), history: S.history, tutorialSeen: S.tutorialSeen });
+  store.write({
+    version: 2,
+    currentId: G.currentId,
+    tutorialSeen: G.tutorialSeen,
+    groups: G.groups.map((g) => ({ ...g, run: dehydrate(g.run) })),
+  });
 }
 
 function commit() {
@@ -249,7 +294,7 @@ function setupInfo() {
 function startRun() {
   const info = setupInfo();
   if (info.blocking.length) return;
-  if (S.run && S.run.phase !== 'summary' && !confirm('Descartar a pelada em andamento e começar outra?')) return;
+  if (S.run && S.run.phase !== 'summary' && !confirm('Descartar o jogo em andamento e começar outro?')) return;
   const c = S.config;
   const ids = c.mode === 'names' ? presentIds() : [];
   const roster = S.players.filter((p) => ids.includes(p.id)).map((p) => ({ id: p.id, name: p.name, aliases: [...p.aliases] }));
@@ -277,14 +322,15 @@ function startRun() {
 /* ---------------------------------------------------------------- telas */
 
 function header() {
-  const back = ui.screen === 'home' ? '' : '<button class="link" data-act="home">‹ Início</button>';
-  return `<header class="top">${back}<span class="brand">Pelada Fácil</span></header>`;
+  const back = ui.screen === 'home' ? '' : ui.screen === 'groupform' ? '<button class="link" data-act="groups">‹ Peladas</button>' : '<button class="link" data-act="home">‹ Início</button>';
+  const brand = G.groups.length > 1 && ui.screen !== 'groups' && ui.screen !== 'groupform' ? cur().name : 'Pelada Fácil';
+  return `<header class="top">${back}<span class="brand">${esc(brand)}</span></header>`;
 }
 
 function phaseLabel(r) {
   if (r.phase === 'draw') return `Sorteio: ${r.draw.drawnTotal()} de ${r.draw.totalSlots()}`;
   if (r.phase === 'teams') return 'Times prontos';
-  if (r.phase === 'summary') return 'Resumo da pelada';
+  if (r.phase === 'summary') return 'Resumo do jogo';
   const m = r.match;
   return m ? `Partida ${r.matchNo}: ${paletteById(r.colors[m.teamA]).name} × ${paletteById(r.colors[m.teamB]).name}` : '';
 }
@@ -293,10 +339,11 @@ function viewHome() {
   const r = run();
   return `<section class="stack">
     <div class="hero"><h1>Pelada Fácil</h1><p class="muted">Sorteio de times, tempo e placar. Sem briga.</p></div>
-    ${r ? `<button class="btn primary big" data-act="resume">Continuar pelada<small>${esc(phaseLabel(r))}</small></button>` : ''}
-    <button class="btn ${r ? '' : 'primary'} big" data-act="new">Nova pelada</button>
+    <button class="groupbar" data-act="groups"><span><b>${esc(cur().name)}</b><small>${esc(groupSubtitle(cur()))}</small></span><span aria-hidden="true">Trocar ›</span></button>
+    ${r ? `<button class="btn primary big" data-act="resume">Continuar jogo<small>${esc(phaseLabel(r))}</small></button>` : ''}
+    <button class="btn ${r ? '' : 'primary'} big" data-act="new">Novo jogo</button>
     <button class="btn big" data-act="players">Jogadores<small>${S.players.length} cadastrados</small></button>
-    <button class="btn big" data-act="history">Histórico<small>${S.history.length ? `${S.history.length} ${S.history.length === 1 ? 'pelada guardada' : 'peladas guardadas'}` : 'nenhuma ainda'}</small></button>
+    <button class="btn big" data-act="history">Histórico<small>${S.history.length ? `${S.history.length} ${S.history.length === 1 ? 'jogo guardado' : 'jogos guardados'}` : 'nenhuma ainda'}</small></button>
     <button class="btn" data-act="tutorial">Como funciona</button>
     <p class="fine">Sem conta. Tudo fica só neste aparelho. <a href="privacidade.html">Política de privacidade</a></p>
   </section>`;
@@ -379,7 +426,7 @@ function viewSetup() {
   ].join('');
 
   return `<section class="stack">
-    <h2>Nova pelada</h2>
+    <h2>Novo jogo</h2>
     <div class="card stack">
       <h3>Como sortear</h3>
       <div class="seg" role="group" aria-label="Como sortear">
@@ -574,7 +621,7 @@ function viewMatch() {
       <button class="link" data-act="toggleevents" aria-expanded="${ui.showEvents}">${ui.showEvents ? 'Esconder lances' : `Ver lances (${m.events.length})`}</button>
       ${ui.showEvents ? `<ul class="events">${evs}</ul>` : ''}
     </div>
-    <button class="btn danger" data-act="endsession">Encerrar a pelada</button>
+    <button class="btn danger" data-act="endsession">Encerrar o jogo</button>
   </section>`;
 }
 
@@ -604,7 +651,7 @@ function standings(r) {
 function summaryText(r) {
   const name = (t) => paletteById(r.colors[t]).name;
   const date = new Date(r.startedAt).toLocaleDateString('pt-BR');
-  const lines = [`Pelada de ${date}`, ''];
+  const lines = [`${cur().name} · ${date}`, ''];
   r.session.history.forEach((h, i) => {
     lines.push(`${i + 1}) ${name(h.teamA)} ${h.scoreA} × ${h.scoreB} ${name(h.teamB)}`);
   });
@@ -627,14 +674,68 @@ function viewSummary() {
     )
     .join('');
   return `<section class="stack">
-    <h2>Resumo da pelada</h2>
+    <h2>Resumo do jogo</h2>
     <div class="card">
       <table><thead><tr><th>Time</th><th>V</th><th>E</th><th>D</th><th>Saldo</th></tr></thead><tbody>${rows}</tbody></table>
     </div>
     <div class="card"><h3>Partidas</h3>${games ? `<ul class="events">${games}</ul>` : '<p class="muted">Nenhuma partida concluída.</p>'}</div>
     <pre>${esc(summaryText(r))}</pre>
     <button class="btn primary big" data-act="share">Compartilhar resumo</button>
-    <button class="btn" data-act="new">Nova pelada</button>
+    <button class="btn" data-act="new">Novo jogo</button>
+  </section>`;
+}
+
+function groupSubtitle(g) {
+  const parts = [];
+  if (g.weekday !== null) parts.push(WEEKDAYS[g.weekday]);
+  parts.push(`${g.players.length} ${g.players.length === 1 ? 'jogador' : 'jogadores'}`);
+  parts.push(`${g.history.length} ${g.history.length === 1 ? 'jogo' : 'jogos'}`);
+  return parts.join(' · ');
+}
+
+function viewGroups() {
+  const items = G.groups
+    .map((g) => {
+      const live = g.run && g.run.phase !== 'summary';
+      const here = g.id === G.currentId;
+      return `<div class="card group ${here ? 'here' : ''}">
+        <button class="grp-main" data-act="selgroup" data-id="${esc(g.id)}" ${here ? 'aria-current="true"' : ''}>
+          <span class="grp-name">${esc(g.name)}${here ? '<small class="tag">aberta</small>' : ''}${live ? '<small class="tag live">jogo em andamento</small>' : ''}</span>
+          <small>${esc(groupSubtitle(g))}</small>
+        </button>
+        <button class="btn sm" data-act="editgroup" data-id="${esc(g.id)}" aria-label="Editar ${esc(g.name)}">Editar</button>
+      </div>`;
+    })
+    .join('');
+  return `<section class="stack">
+    <h2>Minhas peladas<small>${G.groups.length}</small></h2>
+    <p class="fine">Cada pelada tem jogadores, regras e histórico separados.</p>
+    ${items}
+    <button class="btn primary big" data-act="newgroup">Nova pelada</button>
+  </section>`;
+}
+
+function viewGroupForm() {
+  const f = ui.groupForm;
+  const editing = f.id ? G.groups.find((g) => g.id === f.id) : null;
+  const days = ['<option value="">Sem dia fixo</option>']
+    .concat(WEEKDAYS.map((d, i) => `<option value="${i}" ${f.weekday === i ? 'selected' : ''}>${d}</option>`))
+    .join('');
+  const copy = !editing && G.groups.length
+    ? `<div class="field col"><label class="lbl" for="g-copy">Copiar jogadores e regras de<small>Opcional. Depois as duas peladas ficam independentes.</small></label>
+        <select id="g-copy" name="copyfrom"><option value="">Começar do zero</option>${G.groups.map((g) => `<option value="${esc(g.id)}" ${f.copyfrom === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>`
+    : '';
+  return `<section class="stack">
+    <h2>${editing ? 'Editar pelada' : 'Nova pelada'}</h2>
+    <form class="card stack" data-form="group">
+      <div class="field col"><label class="lbl" for="g-name">Nome</label>
+        <input id="g-name" type="text" name="name" value="${esc(f.name)}" maxlength="${NAME_MAX}" placeholder="Ex.: Pelada da quarta" autocomplete="off"></div>
+      <div class="field col"><label class="lbl" for="g-day">Dia da semana</label>
+        <select id="g-day" name="weekday">${days}</select></div>
+      ${copy}
+      <button class="btn primary big" type="submit">${editing ? 'Salvar' : 'Criar pelada'}</button>
+    </form>
+    ${editing ? `<button class="btn danger" data-act="delgroup" data-id="${esc(editing.id)}">Apagar esta pelada</button>` : ''}
   </section>`;
 }
 
@@ -661,16 +762,16 @@ function viewHistory() {
     .join('');
   return `<section class="stack">
     <h2>Histórico<small>${S.history.length}</small></h2>
-    <p class="fine">As peladas encerradas ficam guardadas neste aparelho (até ${HISTORY_MAX}).</p>
-    ${items || '<p class="muted">Nenhuma pelada guardada ainda. Ela aparece aqui quando você encerra uma pelada com ao menos uma partida.</p>'}
+    <p class="fine">Os jogos encerrados desta pelada ficam guardados neste aparelho (até ${HISTORY_MAX}).</p>
+    ${items || '<p class="muted">Nenhum jogo guardado ainda. Ele aparece aqui quando você encerra um jogo com ao menos uma partida.</p>'}
   </section>`;
 }
 
 const TUTORIAL = [
-  { t: 'Cadastre quem joga', p: 'Em "Jogadores", cole a lista do grupo (um nome por linha). Se ninguém quiser usar o celular, escolha "Só cores" ao criar a pelada.' },
+  { t: 'Uma pelada por grupo', p: 'Cada pelada (seu grupo e dia da semana) tem jogadores, regras e histórico próprios. Toque no nome dela na tela inicial para trocar ou criar outra. Em "Jogadores", cole a lista do grupo.' },
   { t: 'Sorteie na hora', p: 'Cada pessoa toca no próprio nome e vê a cor do time em tela cheia. Os times fecham no tamanho certo. Errou? "Desfazer último" devolve a mesma cor.' },
   { t: 'Jogue e marque', p: 'Inicie a partida, toque em "+1 gol" e use "Pausar" quando precisar. A partida termina pelo tempo ou pelos gols que você definir, e o gol errado tem desfazer.' },
-  { t: 'A fila anda sozinha', p: 'Quem ganha fica, até o limite de vitórias. No fim o app mostra quem entra. Ao encerrar a pelada, o resumo vai para o histórico e para o WhatsApp.' },
+  { t: 'A fila anda sozinha', p: 'Quem ganha fica, até o limite de vitórias. No fim o app mostra quem entra. Ao encerrar o jogo, o resumo vai para o histórico e para o WhatsApp.' },
 ];
 
 function tutorialHtml() {
@@ -771,14 +872,14 @@ function endHtml() {
     </div>
     <button class="btn primary big" data-act="nextmatch">Próxima partida</button>
     ${canUndo ? '<button class="btn" data-act="undogoal">Desfazer último gol</button>' : ''}
-    <button class="btn danger" data-act="endsession">Encerrar a pelada</button>
+    <button class="btn danger" data-act="endsession">Encerrar o jogo</button>
   </div></div>`;
 }
 
 /* ---------------------------------------------------------------- render */
 
 function render() {
-  const screen = ui.screen === 'run' ? viewRun() : ui.screen === 'setup' ? viewSetup() : ui.screen === 'players' ? viewPlayers() : ui.screen === 'history' ? viewHistory() : viewHome();
+  const screen = ui.screen === 'run' ? viewRun() : ui.screen === 'setup' ? viewSetup() : ui.screen === 'players' ? viewPlayers() : ui.screen === 'history' ? viewHistory() : ui.screen === 'groups' ? viewGroups() : ui.screen === 'groupform' ? viewGroupForm() : viewHome();
   $('#app').innerHTML = header() + `<main>${screen}</main>`;
   const ovKind = ui.tutorial ? 'tut' : ui.reveal ? 'reveal' : ui.sheet ? 'sheet:' + ui.sheet.type : endHtml() ? 'end' : '';
   $('#overlay').innerHTML = tutorialHtml() || (ui.reveal ? revealHtml() : '') || sheetHtml() || endHtml();
@@ -943,9 +1044,9 @@ function endSession() {
   const m = r.match;
   if (m && m.state === State.ENDED) {
     r.session.finish(m);
-  } else if (m && m.state !== State.WAITING && !confirm('A partida em andamento não será contada. Encerrar a pelada mesmo assim?')) {
+  } else if (m && m.state !== State.WAITING && !confirm('A partida em andamento não será contada. Encerrar o jogo mesmo assim?')) {
     return;
-  } else if (!m && !confirm('Encerrar a pelada?')) {
+  } else if (!m && !confirm('Encerrar o jogo?')) {
     return;
   }
   r.match = null;
@@ -989,12 +1090,66 @@ async function copyText(text, okMessage) {
   }
 }
 
+/** Abre outra pelada. Um jogo com relógio correndo na pelada anterior é pausado para não perder tempo nem alarme. */
+function openGroup(id) {
+  const target = G.groups.find((g) => g.id === id);
+  if (!target) return;
+  if (target.id !== G.currentId) {
+    const m = cur().run?.match;
+    if (m && m.state === State.RUNNING) {
+      m.pause();
+      toast(`Partida de "${cur().name}" pausada.`);
+    }
+    G.currentId = target.id;
+    ui.sheet = null;
+    ui.reveal = null;
+    clearTimeout(ui.revealTimer);
+  }
+  ui.screen = cur().run ? 'run' : 'home';
+  updateWakeLock();
+  commit();
+}
+
 /* ---------------------------------------------------------------- eventos */
 
 const actions = {
   home() {
     ui.screen = 'home';
     render();
+  },
+  groups() {
+    ui.screen = 'groups';
+    ui.groupForm = null;
+    render();
+  },
+  selgroup(el) {
+    openGroup(el.dataset.id);
+  },
+  newgroup() {
+    ui.groupForm = { id: null, name: '', weekday: null, copyfrom: G.groups.length === 1 ? G.groups[0].id : '' };
+    ui.screen = 'groupform';
+    render();
+    $('#g-name')?.focus();
+  },
+  editgroup(el) {
+    const g = G.groups.find((x) => x.id === el.dataset.id);
+    if (!g) return;
+    ui.groupForm = { id: g.id, name: g.name, weekday: g.weekday };
+    ui.screen = 'groupform';
+    render();
+  },
+  delgroup(el) {
+    const g = G.groups.find((x) => x.id === el.dataset.id);
+    if (!g) return;
+    const extra = g.players.length || g.history.length ? ` Os ${g.players.length} jogadores e os ${g.history.length} jogos do histórico serão apagados.` : '';
+    if (!confirm(`Apagar a pelada "${g.name}"?${extra} Não dá para desfazer.`)) return;
+    G.groups = G.groups.filter((x) => x.id !== g.id);
+    if (!G.groups.length) G.groups.push(cleanGroup({}, 'Minha pelada'));
+    if (G.currentId === g.id) G.currentId = G.groups[0].id;
+    ui.groupForm = null;
+    ui.screen = 'groups';
+    toast('Pelada apagada.');
+    commit();
   },
   resume() {
     ui.screen = 'run';
@@ -1037,7 +1192,7 @@ const actions = {
   },
   delhist(el) {
     const h = S.history.find((x) => x.id === el.dataset.id);
-    if (!h || !confirm(`Apagar a pelada de ${fmtDate(h.startedAt)} do histórico?`)) return;
+    if (!h || !confirm(`Apagar o jogo de ${fmtDate(h.startedAt)} do histórico?`)) return;
     S.history = S.history.filter((x) => x.id !== h.id);
     commit();
   },
@@ -1254,6 +1409,38 @@ document.addEventListener('submit', (e) => {
     if (!added) toast('Esse jogador já está na lista.');
     commit();
     $('[name=name]')?.focus();
+  } else if (kind === 'group') {
+    const f = ui.groupForm;
+    const name = String(data.get('name') || '').trim().slice(0, NAME_MAX);
+    if (!name) {
+      toast('Dê um nome para a pelada.');
+      $('#g-name')?.focus();
+      return;
+    }
+    if (G.groups.some((g) => g.id !== f.id && normalize(g.name) === normalize(name))) {
+      toast('Já existe uma pelada com esse nome.');
+      return;
+    }
+    const wd = String(data.get('weekday') || '');
+    const weekday = wd === '' ? null : Number(wd);
+    if (f.id) {
+      const g = G.groups.find((x) => x.id === f.id);
+      g.name = name;
+      g.weekday = weekday;
+      ui.groupForm = null;
+      ui.screen = 'groups';
+      toast('Pelada salva.');
+      commit();
+    } else {
+      const src = G.groups.find((g) => g.id === data.get('copyfrom'));
+      const base = src ? { players: structuredClone(src.players), config: structuredClone(src.config) } : {};
+      if (base.config) base.config.present = [];
+      const g = cleanGroup({ ...base, name, weekday }, name);
+      g.id = newId();
+      G.groups.push(g);
+      ui.groupForm = null;
+      openGroup(g.id);
+    }
   } else if (kind === 'bulk') {
     const added = addPlayers(parsePlayerLines(String(data.get('list') || '')));
     toast(added ? `${added} ${added === 1 ? 'jogador adicionado' : 'jogadores adicionados'}.` : 'Ninguém novo para adicionar.');
