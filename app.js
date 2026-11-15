@@ -177,7 +177,7 @@ const S = {
   set tutorialSeen(v) { G.tutorialSeen = v; },
 };
 const ui = {
-  screen: cur().run ? 'run' : 'home',
+  screen: cur().run ? 'run' : 'groups',
   groupForm: null,
   tutorial: null,
   lastOverlay: '',
@@ -322,8 +322,9 @@ function startRun() {
 /* ---------------------------------------------------------------- telas */
 
 function header() {
-  const back = ui.screen === 'home' ? '' : ui.screen === 'groupform' ? '<button class="link" data-act="groups">‹ Peladas</button>' : '<button class="link" data-act="home">‹ Início</button>';
-  const brand = G.groups.length > 1 && ui.screen !== 'groups' && ui.screen !== 'groupform' ? cur().name : 'Pelada Fácil';
+  const toList = ui.screen === 'home' || ui.screen === 'groupform';
+  const back = ui.screen === 'groups' ? '' : toList ? '<button class="link" data-act="groups">‹ Peladas</button>' : '<button class="link" data-act="home">‹ Pelada</button>';
+  const brand = ui.screen === 'groups' || ui.screen === 'groupform' ? 'Pelada Fácil' : cur().name;
   return `<header class="top">${back}<span class="brand">${esc(brand)}</span></header>`;
 }
 
@@ -338,14 +339,12 @@ function phaseLabel(r) {
 function viewHome() {
   const r = run();
   return `<section class="stack">
-    <div class="hero"><h1>Pelada Fácil</h1><p class="muted">Sorteio de times, tempo e placar. Sem briga.</p></div>
-    <button class="groupbar" data-act="groups"><span><b>${esc(cur().name)}</b><small>${esc(groupSubtitle(cur()))}</small></span><span aria-hidden="true">Trocar ›</span></button>
+    <div class="hero"><h1>${esc(cur().name)}</h1><p class="muted">${esc(groupSubtitle(cur()))}</p></div>
     ${r ? `<button class="btn primary big" data-act="resume">Continuar jogo<small>${esc(phaseLabel(r))}</small></button>` : ''}
     <button class="btn ${r ? '' : 'primary'} big" data-act="new">Novo jogo</button>
     <button class="btn big" data-act="players">Jogadores<small>${S.players.length} cadastrados</small></button>
     <button class="btn big" data-act="history">Histórico<small>${S.history.length ? `${S.history.length} ${S.history.length === 1 ? 'jogo guardado' : 'jogos guardados'}` : 'nenhuma ainda'}</small></button>
-    <button class="btn" data-act="tutorial">Como funciona</button>
-    <p class="fine">Sem conta. Tudo fica só neste aparelho. <a href="privacidade.html">Política de privacidade</a></p>
+    <button class="btn" data-act="editgroup" data-id="${esc(cur().id)}">Editar esta pelada</button>
   </section>`;
 }
 
@@ -697,10 +696,9 @@ function viewGroups() {
   const items = G.groups
     .map((g) => {
       const live = g.run && g.run.phase !== 'summary';
-      const here = g.id === G.currentId;
-      return `<div class="card group ${here ? 'here' : ''}">
-        <button class="grp-main" data-act="selgroup" data-id="${esc(g.id)}" ${here ? 'aria-current="true"' : ''}>
-          <span class="grp-name">${esc(g.name)}${here ? '<small class="tag">aberta</small>' : ''}${live ? '<small class="tag live">jogo em andamento</small>' : ''}</span>
+      return `<div class="card group">
+        <button class="grp-main" data-act="selgroup" data-id="${esc(g.id)}">
+          <span class="grp-name">${esc(g.name)}${live ? '<small class="tag live">jogo em andamento</small>' : ''}</span>
           <small>${esc(groupSubtitle(g))}</small>
         </button>
         <button class="btn sm" data-act="editgroup" data-id="${esc(g.id)}" aria-label="Editar ${esc(g.name)}">Editar</button>
@@ -708,10 +706,13 @@ function viewGroups() {
     })
     .join('');
   return `<section class="stack">
+    <div class="hero"><h1>Pelada Fácil</h1><p class="muted">Sorteio de times, tempo e placar. Sem briga.</p></div>
     <h2>Minhas peladas<small>${G.groups.length}</small></h2>
-    <p class="fine">Cada pelada tem jogadores, regras e histórico separados.</p>
+    <p class="fine">Escolha uma pelada para jogar, ver os jogadores e o histórico. Cada uma tem os seus próprios dados.</p>
     ${items}
     <button class="btn primary big" data-act="newgroup">Nova pelada</button>
+    <button class="btn" data-act="tutorial">Como funciona</button>
+    <p class="fine">Sem conta. Tudo fica só neste aparelho. <a href="privacidade.html">Política de privacidade</a></p>
   </section>`;
 }
 
@@ -1105,7 +1106,7 @@ function openGroup(id) {
     ui.reveal = null;
     clearTimeout(ui.revealTimer);
   }
-  ui.screen = cur().run ? 'run' : 'home';
+  ui.screen = 'home';
   updateWakeLock();
   commit();
 }
@@ -1134,7 +1135,7 @@ const actions = {
   editgroup(el) {
     const g = G.groups.find((x) => x.id === el.dataset.id);
     if (!g) return;
-    ui.groupForm = { id: g.id, name: g.name, weekday: g.weekday };
+    ui.groupForm = { id: g.id, name: g.name, weekday: g.weekday, from: ui.screen };
     ui.screen = 'groupform';
     render();
   },
@@ -1427,8 +1428,8 @@ document.addEventListener('submit', (e) => {
       const g = G.groups.find((x) => x.id === f.id);
       g.name = name;
       g.weekday = weekday;
+      ui.screen = f.from === 'home' ? 'home' : 'groups';
       ui.groupForm = null;
-      ui.screen = 'groups';
       toast('Pelada salva.');
       commit();
     } else {

@@ -453,3 +453,4 @@ main { display: block; }
 .group .btn.sm { align-self: center; }
 .field.col { flex-direction: column; align-items: stretch; gap: 8px; }
 .field.col select, .field.col input { width: 100%; max-width: 100%; }
+.fine a { color: var(--accent); }
