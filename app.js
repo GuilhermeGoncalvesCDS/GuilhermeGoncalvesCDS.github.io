@@ -1490,6 +1490,75 @@ document.addEventListener('keydown', (e) => {
   else if (ui.sheet) actions.closesheet();
 });
 
+/* ---------------------------------------------------------------- botão Voltar do celular */
+/* O Voltar do aparelho volta uma tela do app (ou fecha a janela aberta) em vez de fechar o app.
+   Truque: o histórico do navegador sempre tem uma entrada à frente da base; cada Voltar consome essa
+   entrada, o app trata o comando e recoloca a entrada. Só na lista de peladas ele deixa o app fechar. */
+
+function armBack() {
+  try {
+    history.pushState({ organizaRachao: true }, '');
+  } catch {
+    /* sem histórico: o Voltar volta a ser o do navegador */
+  }
+}
+
+function handleBack() {
+  if (ui.tutorial) {
+    actions.tutskip();
+    return true;
+  }
+  if (ui.reveal) {
+    closeReveal(true);
+    return true;
+  }
+  if (ui.sheet) {
+    actions.closesheet();
+    return true;
+  }
+  if (endHtml()) {
+    toast('Escolha uma opção para continuar.');
+    return true;
+  }
+  const s = ui.screen;
+  if (s === 'groups') return false;
+  if (s === 'groupform') {
+    if (ui.groupForm && ui.groupForm.from === 'home') {
+      ui.groupForm = null;
+      actions.home();
+    } else {
+      actions.groups();
+    }
+    return true;
+  }
+  if (s === 'home') {
+    actions.groups();
+    return true;
+  }
+  actions.home();
+  return true;
+}
+
+/* O Chrome ignora, no Voltar, entradas de histórico criadas antes de qualquer toque na página;
+   por isso a entrada só é colocada no primeiro toque. */
+let backArmed = false;
+try {
+  history.replaceState({ organizaRachao: 'base' }, '');
+  const arm = () => {
+    if (backArmed) return;
+    backArmed = true;
+    armBack();
+  };
+  document.addEventListener('pointerdown', arm, { once: true, capture: true });
+  document.addEventListener('keydown', arm, { once: true, capture: true });
+  window.addEventListener('popstate', () => {
+    if (!backArmed) return;
+    if (handleBack()) armBack();
+    else history.back();
+  });
+} catch {
+  /* ignora */
+}
 
 setInterval(tick, 100);
 render();
