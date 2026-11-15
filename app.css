@@ -96,7 +96,7 @@ h3 { font-size: 1.05rem; }
   padding-top: env(safe-area-inset-top);
   background: var(--bg);
 }
-.brand { font-weight: 800; letter-spacing: -0.01em; margin-left: auto; color: var(--muted); }
+.brand { font-weight: 800; letter-spacing: -0.01em; margin-right: auto; color: var(--muted); overflow-wrap: anywhere; }
 .link {
   font: inherit;
   font-weight: 700;
@@ -454,3 +454,10 @@ main { display: block; }
 .field.col { flex-direction: column; align-items: stretch; gap: 8px; }
 .field.col select, .field.col input { width: 100%; max-width: 100%; }
 .fine a { color: var(--accent); }
+
+/* botão Voltar fixo no rodapé */
+.backbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: flex; justify-content: center; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--bg); border-top: 1px solid var(--border); }
+.backbtn { min-width: 160px; min-height: 48px; font-weight: 700; }
+body.has-back #app { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+body.has-back #toast { bottom: calc(88px + env(safe-area-inset-bottom)); }
+body:has(input:focus, textarea:focus, select:focus) .backbar { display: none; }

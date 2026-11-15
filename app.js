@@ -322,10 +322,16 @@ function startRun() {
 /* ---------------------------------------------------------------- telas */
 
 function header() {
-  const toList = ui.screen === 'home' || ui.screen === 'groupform';
-  const back = ui.screen === 'groups' ? '' : toList ? '<button class="link" data-act="groups">‹ Peladas</button>' : '<button class="link" data-act="home">‹ Pelada</button>';
   const brand = ui.screen === 'groups' || ui.screen === 'groupform' ? 'Organiza Rachão' : cur().name;
-  return `<header class="top">${back}<span class="brand">${esc(brand)}</span></header>`;
+  return `<header class="top"><span class="brand">${esc(brand)}</span></header>`;
+}
+
+/** Botão Voltar fixo no rodapé: sobe um nível (da tela para a pelada, da pelada para a lista). */
+function backBar() {
+  if (ui.screen === 'groups') return '';
+  const target = ui.screen === 'home' || ui.screen === 'groupform' ? 'groups' : 'home';
+  const where = target === 'groups' ? 'Voltar para a lista de peladas' : `Voltar para ${cur().name}`;
+  return `<nav class="backbar" aria-label="Navegação"><button class="btn sm backbtn" data-act="${target}" aria-label="${esc(where)}">‹ Voltar</button></nav>`;
 }
 
 function phaseLabel(r) {
@@ -881,7 +887,8 @@ function endHtml() {
 
 function render() {
   const screen = ui.screen === 'run' ? viewRun() : ui.screen === 'setup' ? viewSetup() : ui.screen === 'players' ? viewPlayers() : ui.screen === 'history' ? viewHistory() : ui.screen === 'groups' ? viewGroups() : ui.screen === 'groupform' ? viewGroupForm() : viewHome();
-  $('#app').innerHTML = header() + `<main>${screen}</main>`;
+  $('#app').innerHTML = header() + `<main>${screen}</main>` + backBar();
+  document.body.classList.toggle('has-back', ui.screen !== 'groups');
   const ovKind = ui.tutorial ? 'tut' : ui.reveal ? 'reveal' : ui.sheet ? 'sheet:' + ui.sheet.type : endHtml() ? 'end' : '';
   $('#overlay').innerHTML = tutorialHtml() || (ui.reveal ? revealHtml() : '') || sheetHtml() || endHtml();
   if (ovKind !== ui.lastOverlay) {
