@@ -11,7 +11,7 @@ import {
 } from './core.js';
 
 /* ====================================================================
- * Pelada Fácil. Sem conta, sem servidor: tudo fica no aparelho.
+ * Organiza Rachão. Sem conta, sem servidor: tudo fica no aparelho.
  * ==================================================================== */
 
 const KEY_V1 = 'pelada.v1';
@@ -324,7 +324,7 @@ function startRun() {
 function header() {
   const toList = ui.screen === 'home' || ui.screen === 'groupform';
   const back = ui.screen === 'groups' ? '' : toList ? '<button class="link" data-act="groups">‹ Peladas</button>' : '<button class="link" data-act="home">‹ Pelada</button>';
-  const brand = ui.screen === 'groups' || ui.screen === 'groupform' ? 'Pelada Fácil' : cur().name;
+  const brand = ui.screen === 'groups' || ui.screen === 'groupform' ? 'Organiza Rachão' : cur().name;
   return `<header class="top">${back}<span class="brand">${esc(brand)}</span></header>`;
 }
 
@@ -706,7 +706,7 @@ function viewGroups() {
     })
     .join('');
   return `<section class="stack">
-    <div class="hero"><h1>Pelada Fácil</h1><p class="muted">Sorteio de times, tempo e placar. Sem briga.</p></div>
+    <div class="hero"><h1>Organiza Rachão</h1><p class="muted">Sorteio de times, tempo e placar. Sem briga.</p></div>
     <h2>Minhas peladas<small>${G.groups.length}</small></h2>
     <p class="fine">Escolha uma pelada para jogar, ver os jogadores e o histórico. Cada uma tem os seus próprios dados.</p>
     ${items}
