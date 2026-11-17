@@ -180,15 +180,19 @@ const S = {
 const NAV_KEY = 'rachao.nav';
 const RESTORABLE = ['home', 'players', 'setup', 'history', 'backup'];
 function startScreen() {
-  if (cur().run) return 'run';
   try {
     const nav = JSON.parse(sessionStorage.getItem(NAV_KEY) || 'null');
-    if (nav && nav.id === G.currentId && RESTORABLE.includes(nav.screen)) return nav.screen;
-    if (nav && nav.screen === 'backup') return 'backup';
+    if (nav) {
+      if (nav.screen === 'groups' || nav.screen === 'groupform') return 'groups';
+      if (nav.id === G.currentId) {
+        if (nav.screen === 'run') return cur().run ? 'run' : 'home';
+        if (RESTORABLE.includes(nav.screen)) return nav.screen;
+      }
+    }
   } catch {
-    /* sem sessionStorage: abre na lista */
+    /* sem sessionStorage: segue a regra abaixo */
   }
-  return 'groups';
+  return cur().run ? 'run' : 'groups';
 }
 function saveNav() {
   try {
