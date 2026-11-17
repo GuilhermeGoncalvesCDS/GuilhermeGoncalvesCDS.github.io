@@ -176,8 +176,29 @@ const S = {
   get tutorialSeen() { return G.tutorialSeen; },
   set tutorialSeen(v) { G.tutorialSeen = v; },
 };
+/* Puxar para atualizar (ou recarregar) deve voltar à mesma tela: a tela atual fica na sessão da aba. */
+const NAV_KEY = 'rachao.nav';
+const RESTORABLE = ['home', 'players', 'setup', 'history', 'backup'];
+function startScreen() {
+  if (cur().run) return 'run';
+  try {
+    const nav = JSON.parse(sessionStorage.getItem(NAV_KEY) || 'null');
+    if (nav && nav.id === G.currentId && RESTORABLE.includes(nav.screen)) return nav.screen;
+    if (nav && nav.screen === 'backup') return 'backup';
+  } catch {
+    /* sem sessionStorage: abre na lista */
+  }
+  return 'groups';
+}
+function saveNav() {
+  try {
+    sessionStorage.setItem(NAV_KEY, JSON.stringify({ screen: ui.screen, id: G.currentId }));
+  } catch {
+    /* ignora */
+  }
+}
 const ui = {
-  screen: cur().run ? 'run' : 'groups',
+  screen: startScreen(),
   groupForm: null,
   updateReady: false,
   tutorial: null,
@@ -898,6 +919,7 @@ function render() {
   const screen = ui.screen === 'run' ? viewRun() : ui.screen === 'setup' ? viewSetup() : ui.screen === 'players' ? viewPlayers() : ui.screen === 'history' ? viewHistory() : ui.screen === 'groups' ? viewGroups() : ui.screen === 'groupform' ? viewGroupForm() : ui.screen === 'backup' ? viewBackup() : viewHome();
   $('#app').innerHTML = (ui.updateReady ? updateBar() : '') + header() + `<main>${screen}</main>` + backBar();
   document.body.classList.toggle('has-back', ui.screen !== 'groups');
+  saveNav();
   const ovKind = ui.tutorial ? 'tut' : ui.reveal ? 'reveal' : ui.sheet ? 'sheet:' + ui.sheet.type : endHtml() ? 'end' : '';
   $('#overlay').innerHTML = tutorialHtml() || (ui.reveal ? revealHtml() : '') || sheetHtml() || endHtml();
   if (ovKind !== ui.lastOverlay) {
@@ -1671,7 +1693,9 @@ function handleBack() {
    por isso a entrada só é colocada no primeiro toque. */
 let backArmed = false;
 try {
-  history.replaceState({ organizaRachao: 'base' }, '');
+  /* recarregou em cima da entrada à frente da base (puxar para atualizar): ela continua valendo */
+  if (history.state && history.state.organizaRachao === true) backArmed = true;
+  else history.replaceState({ organizaRachao: 'base' }, '');
   const arm = () => {
     if (backArmed) return;
     backArmed = true;
