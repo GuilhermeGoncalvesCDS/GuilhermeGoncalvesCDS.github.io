@@ -468,3 +468,6 @@ body:has(input:focus, textarea:focus, select:focus) .backbar { display: none; }
 .filebtn { display: flex; align-items: center; justify-content: center; cursor: pointer; text-align: center; }
 .sr-only:focus-visible + .fine, input.sr-only:focus-visible { outline: 3px solid var(--focus, #1a5fd6); }
 .notice .btn { margin-top: 10px; }
+
+.filebtn { flex-direction: column; gap: 2px; }
+.filebtn small { font-weight: 400; opacity: 0.85; }

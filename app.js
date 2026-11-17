@@ -751,7 +751,7 @@ function viewGroups() {
     ${hasUserData() && !G.lastBackup ? '<div class="notice warn"><b>Faça um backup.</b> Seus dados ficam só neste aparelho e se perdem se você limpar o navegador ou trocar de celular.<br><button class="btn sm" data-act="backup">Fazer backup agora</button></div>' : ''}
     ${items}
     <button class="btn primary big" data-act="newgroup">Nova pelada</button>
-    <button class="btn" data-act="backup">Backup dos dados</button>
+    <button class="btn big" data-act="backup">Backup dos dados<small>${G.lastBackup ? `último em ${new Date(G.lastBackup).toLocaleDateString('pt-BR')}` : 'salvar ou carregar'}</small></button>
     <button class="btn" data-act="tutorial">Como funciona</button>
     <p class="fine">Sem conta. Tudo fica só neste aparelho. <a href="privacidade.html">Política de privacidade</a></p>
   </section>`;
@@ -1215,15 +1215,14 @@ async function restoreBackup(file) {
 }
 
 function viewBackup() {
-  const last = G.lastBackup ? new Date(G.lastBackup).toLocaleDateString('pt-BR') : null;
+  const last = G.lastBackup ? `Último backup em ${new Date(G.lastBackup).toLocaleDateString('pt-BR')}.` : 'Você ainda não fez nenhum backup.';
   return `<section class="stack">
     <h2>Backup dos dados</h2>
-    <p class="muted">Os dados ficam só neste aparelho. Se você limpar os dados do navegador, desinstalar o app ou trocar de celular, eles se perdem. O backup é um arquivo que você guarda onde quiser (WhatsApp, Drive, e-mail).</p>
-    <p class="fine">${last ? `Último backup: ${last}.` : 'Você ainda não fez nenhum backup.'} Entram todas as peladas, jogadores, regras e histórico. O jogo em andamento não entra.</p>
-    <button class="btn primary big" data-act="savebackup">Salvar backup</button>
-    <label class="btn big filebtn" for="restore-file">Restaurar de um arquivo</label>
+    <p class="muted">O que você quer fazer?</p>
+    <button class="btn primary big" data-act="savebackup">Fazer backup<small>salva um arquivo com todas as peladas</small></button>
+    <label class="btn big filebtn" for="restore-file">Carregar backup<small>escolher um arquivo salvo antes</small></label>
     <input id="restore-file" class="sr-only" type="file" accept=".json,application/json">
-    <p class="fine">Ao restaurar, as peladas do arquivo são adicionadas às que você já tem. Nada é apagado.</p>
+    <p class="fine">${last} Os dados ficam só neste aparelho: se limpar o navegador, desinstalar o app ou trocar de celular, eles se perdem. Guarde o arquivo onde quiser (WhatsApp, Drive, e-mail). O jogo em andamento não entra. Ao carregar, as peladas do arquivo são somadas às que você já tem e nada é apagado.</p>
   </section>`;
 }
 
