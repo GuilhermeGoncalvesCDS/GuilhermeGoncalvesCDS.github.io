@@ -192,7 +192,8 @@ function startScreen() {
   } catch {
     /* sem sessionStorage: segue a regra abaixo */
   }
-  return cur().run ? 'run' : 'groups';
+  /* abertura nova: jogo em andamento reabre no jogo; jogo já encerrado (resumo) não prende mais o app */
+  return cur().run && cur().run.phase !== 'summary' ? 'run' : 'groups';
 }
 function saveNav() {
   try {
