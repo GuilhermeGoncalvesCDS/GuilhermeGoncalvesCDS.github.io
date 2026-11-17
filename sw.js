@@ -1,5 +1,5 @@
 /* Guarda os arquivos do app para abrir sem internet. Estratégia: responde do cache e atualiza em segundo plano. */
-const CACHE = 'pelada-v7';
+const CACHE = 'pelada-v8';
 const ASSETS = [
   './',
   './index.html',
@@ -14,7 +14,7 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {

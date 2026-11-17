@@ -461,3 +461,10 @@ main { display: block; }
 body.has-back #app { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 body.has-back #toast { bottom: calc(88px + env(safe-area-inset-bottom)); }
 body:has(input:focus, textarea:focus, select:focus) .backbar { display: none; }
+
+/* aviso de versão, backup e primeiro passo */
+.updatebar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 -16px; padding: calc(8px + env(safe-area-inset-top)) 16px 8px; background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.updatebar .btn { background: var(--on-accent); color: var(--accent); border-color: var(--on-accent); }
+.filebtn { display: flex; align-items: center; justify-content: center; cursor: pointer; text-align: center; }
+.sr-only:focus-visible + .fine, input.sr-only:focus-visible { outline: 3px solid var(--focus, #1a5fd6); }
+.notice .btn { margin-top: 10px; }

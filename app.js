@@ -158,7 +158,7 @@ function load() {
   }
   const groups = saved.groups.map((g, i) => cleanGroup(g, `Pelada ${i + 1}`));
   const currentId = groups.some((g) => g.id === saved.currentId) ? saved.currentId : groups[0].id;
-  return { groups, currentId, tutorialSeen: Boolean(saved.tutorialSeen) };
+  return { groups, currentId, tutorialSeen: Boolean(saved.tutorialSeen), lastBackup: Number(saved.lastBackup) || null };
 }
 
 /** G guarda tudo; S é um atalho para a pelada que está aberta, para o resto do código não precisar saber de grupos. */
@@ -179,6 +179,7 @@ const S = {
 const ui = {
   screen: cur().run ? 'run' : 'groups',
   groupForm: null,
+  updateReady: false,
   tutorial: null,
   lastOverlay: '',
   lastAnnounce: '',
@@ -197,6 +198,7 @@ function persist() {
     version: 2,
     currentId: G.currentId,
     tutorialSeen: G.tutorialSeen,
+    lastBackup: G.lastBackup,
     groups: G.groups.map((g) => ({ ...g, run: dehydrate(g.run) })),
   });
 }
@@ -322,16 +324,20 @@ function startRun() {
 /* ---------------------------------------------------------------- telas */
 
 function header() {
-  const brand = ui.screen === 'groups' || ui.screen === 'groupform' ? 'Organiza Rachão' : cur().name;
+  const brand = ui.screen === 'groups' || ui.screen === 'groupform' || ui.screen === 'backup' ? 'Organiza Rachão' : cur().name;
   return `<header class="top"><span class="brand">${esc(brand)}</span></header>`;
 }
 
 /** Botão Voltar fixo no rodapé: sobe um nível (da tela para a pelada, da pelada para a lista). */
 function backBar() {
   if (ui.screen === 'groups') return '';
-  const target = ui.screen === 'home' || ui.screen === 'groupform' ? 'groups' : 'home';
+  const target = ui.screen === 'home' || ui.screen === 'groupform' || ui.screen === 'backup' ? 'groups' : 'home';
   const where = target === 'groups' ? 'Voltar para a lista de peladas' : `Voltar para ${cur().name}`;
   return `<nav class="backbar" aria-label="Navegação"><button class="btn sm backbtn" data-act="${target}" aria-label="${esc(where)}">‹ Voltar</button></nav>`;
+}
+
+function updateBar() {
+  return '<div class="updatebar" role="status"><span>Nova versão disponível.</span><button class="btn sm primary" data-act="reloadapp">Atualizar</button></div>';
 }
 
 function phaseLabel(r) {
@@ -346,6 +352,7 @@ function viewHome() {
   const r = run();
   return `<section class="stack">
     <div class="hero"><h1>${esc(cur().name)}</h1><p class="muted">${esc(groupSubtitle(cur()))}</p></div>
+    ${!S.players.length && !S.history.length && !r ? '<div class="notice"><b>Primeiro passo:</b> cadastre quem joga nesta pelada. Se ninguém quiser usar o celular, dá para jogar só com as cores, sem cadastro (em "Novo jogo").<br><button class="btn sm" data-act="players">Cadastrar jogadores</button></div>' : ''}
     ${r ? `<button class="btn primary big" data-act="resume">Continuar jogo<small>${esc(phaseLabel(r))}</small></button>` : ''}
     <button class="btn ${r ? '' : 'primary'} big" data-act="new">Novo jogo</button>
     <button class="btn big" data-act="players">Jogadores<small>${S.players.length} cadastrados</small></button>
@@ -715,8 +722,10 @@ function viewGroups() {
     <div class="hero"><h1>Organiza Rachão</h1><p class="muted">Sorteio de times, tempo e placar. Sem briga.</p></div>
     <h2>Minhas peladas<small>${G.groups.length}</small></h2>
     <p class="fine">Escolha uma pelada para jogar, ver os jogadores e o histórico. Cada uma tem os seus próprios dados.</p>
+    ${hasUserData() && !G.lastBackup ? '<div class="notice warn"><b>Faça um backup.</b> Seus dados ficam só neste aparelho e se perdem se você limpar o navegador ou trocar de celular.<br><button class="btn sm" data-act="backup">Fazer backup agora</button></div>' : ''}
     ${items}
     <button class="btn primary big" data-act="newgroup">Nova pelada</button>
+    <button class="btn" data-act="backup">Backup dos dados</button>
     <button class="btn" data-act="tutorial">Como funciona</button>
     <p class="fine">Sem conta. Tudo fica só neste aparelho. <a href="privacidade.html">Política de privacidade</a></p>
   </section>`;
@@ -886,8 +895,8 @@ function endHtml() {
 /* ---------------------------------------------------------------- render */
 
 function render() {
-  const screen = ui.screen === 'run' ? viewRun() : ui.screen === 'setup' ? viewSetup() : ui.screen === 'players' ? viewPlayers() : ui.screen === 'history' ? viewHistory() : ui.screen === 'groups' ? viewGroups() : ui.screen === 'groupform' ? viewGroupForm() : viewHome();
-  $('#app').innerHTML = header() + `<main>${screen}</main>` + backBar();
+  const screen = ui.screen === 'run' ? viewRun() : ui.screen === 'setup' ? viewSetup() : ui.screen === 'players' ? viewPlayers() : ui.screen === 'history' ? viewHistory() : ui.screen === 'groups' ? viewGroups() : ui.screen === 'groupform' ? viewGroupForm() : ui.screen === 'backup' ? viewBackup() : viewHome();
+  $('#app').innerHTML = (ui.updateReady ? updateBar() : '') + header() + `<main>${screen}</main>` + backBar();
   document.body.classList.toggle('has-back', ui.screen !== 'groups');
   const ovKind = ui.tutorial ? 'tut' : ui.reveal ? 'reveal' : ui.sheet ? 'sheet:' + ui.sheet.type : endHtml() ? 'end' : '';
   $('#overlay').innerHTML = tutorialHtml() || (ui.reveal ? revealHtml() : '') || sheetHtml() || endHtml();
@@ -1098,6 +1107,99 @@ async function copyText(text, okMessage) {
   }
 }
 
+/* ---------------------------------------------------------------- backup */
+
+const BACKUP_APP = 'organiza-rachao';
+const isoDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+function hasUserData() {
+  return G.groups.some((g) => g.players.length || g.history.length);
+}
+
+function buildBackup() {
+  return {
+    app: BACKUP_APP,
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    groups: G.groups.map(({ id, name, weekday, players, config, history }) => ({ id, name, weekday, players, config, history })),
+  };
+}
+
+function markBackup() {
+  G.lastBackup = Date.now();
+  commit();
+}
+
+async function saveBackup() {
+  const name = `organiza-rachao-backup-${isoDay()}.json`;
+  const file = new File([JSON.stringify(buildBackup(), null, 2)], name, { type: 'application/json' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Backup do Organiza Rachão' });
+      markBackup();
+      toast('Backup compartilhado. Guarde o arquivo em um lugar seguro.');
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+  }
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  markBackup();
+  toast('Backup salvo na pasta Downloads.');
+}
+
+async function restoreBackup(file) {
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    toast('Esse arquivo não é um backup válido.');
+    return;
+  }
+  if (!data || data.app !== BACKUP_APP || !Array.isArray(data.groups) || !data.groups.length) {
+    toast('Esse arquivo não é um backup do Organiza Rachão.');
+    return;
+  }
+  const incoming = data.groups.map((g, i) => cleanGroup({ ...g, run: null }, `Pelada ${i + 1}`));
+  const players = incoming.reduce((n, g) => n + g.players.length, 0);
+  const games = incoming.reduce((n, g) => n + g.history.length, 0);
+  if (!confirm(`Restaurar ${incoming.length} ${incoming.length === 1 ? 'pelada' : 'peladas'} (${players} jogadores, ${games} jogos)? Elas serão adicionadas às que você já tem.`)) return;
+  const pristine = G.groups.length === 1 && !G.groups[0].players.length && !G.groups[0].history.length && !G.groups[0].run;
+  if (pristine) G.groups = [];
+  const ids = new Set(G.groups.map((g) => g.id));
+  const names = new Set(G.groups.map((g) => normalize(g.name)));
+  for (const g of incoming) {
+    if (ids.has(g.id)) g.id = newId();
+    ids.add(g.id);
+    while (names.has(normalize(g.name))) g.name = `${g.name} (restaurada)`.slice(0, NAME_MAX + 12);
+    names.add(normalize(g.name));
+    G.groups.push(g);
+  }
+  if (pristine) G.currentId = G.groups[0].id;
+  toast(`${incoming.length} ${incoming.length === 1 ? 'pelada restaurada' : 'peladas restauradas'}.`);
+  commit();
+}
+
+function viewBackup() {
+  const last = G.lastBackup ? new Date(G.lastBackup).toLocaleDateString('pt-BR') : null;
+  return `<section class="stack">
+    <h2>Backup dos dados</h2>
+    <p class="muted">Os dados ficam só neste aparelho. Se você limpar os dados do navegador, desinstalar o app ou trocar de celular, eles se perdem. O backup é um arquivo que você guarda onde quiser (WhatsApp, Drive, e-mail).</p>
+    <p class="fine">${last ? `Último backup: ${last}.` : 'Você ainda não fez nenhum backup.'} Entram todas as peladas, jogadores, regras e histórico. O jogo em andamento não entra.</p>
+    <button class="btn primary big" data-act="savebackup">Salvar backup</button>
+    <label class="btn big filebtn" for="restore-file">Restaurar de um arquivo</label>
+    <input id="restore-file" class="sr-only" type="file" accept=".json,application/json">
+    <p class="fine">Ao restaurar, as peladas do arquivo são adicionadas às que você já tem. Nada é apagado.</p>
+  </section>`;
+}
+
 /** Abre outra pelada. Um jogo com relógio correndo na pelada anterior é pausado para não perder tempo nem alarme. */
 function openGroup(id) {
   const target = G.groups.find((g) => g.id === id);
@@ -1124,6 +1226,17 @@ const actions = {
   home() {
     ui.screen = 'home';
     render();
+  },
+  backup() {
+    ui.screen = 'backup';
+    render();
+  },
+  savebackup() {
+    saveBackup();
+  },
+  reloadapp() {
+    persist();
+    location.reload();
   },
   groups() {
     ui.screen = 'groups';
@@ -1380,6 +1493,10 @@ document.addEventListener('change', (e) => {
       toast('Não dá mais para trocar quem começa.');
     }
     commit();
+  } else if (t.id === 'restore-file') {
+    const f = t.files && t.files[0];
+    t.value = '';
+    if (f) restoreBackup(f);
   } else if (t.matches('[data-cfg]')) {
     S.config[t.dataset.cfg] = t.value;
     commit();
@@ -1529,6 +1646,10 @@ function handleBack() {
   }
   const s = ui.screen;
   if (s === 'groups') return false;
+  if (s === 'backup') {
+    actions.groups();
+    return true;
+  }
   if (s === 'groupform') {
     if (ui.groupForm && ui.groupForm.from === 'home') {
       ui.groupForm = null;
@@ -1572,5 +1693,26 @@ render();
 updateWakeLock();
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController && !ui.updateReady) {
+      ui.updateReady = true;
+      render();
+    }
+  });
+  navigator.serviceWorker
+    .register('./sw.js')
+    .then((reg) => {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    })
+    .catch(() => {});
+}
+
+/* pede ao navegador para não apagar os dados do app quando faltar espaço */
+try {
+  navigator.storage?.persist?.();
+} catch {
+  /* ignora */
 }
